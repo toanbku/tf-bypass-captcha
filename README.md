@@ -1,4 +1,4 @@
-# Bypass Captcha
+# Auto pass ReCAPTCHA
 
 ---
 

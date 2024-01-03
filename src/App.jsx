@@ -4,6 +4,10 @@ import "@tensorflow/tfjs-backend-webgl"; // set backend to webgl
 import Loader from "./components/loader";
 import ButtonHandler from "./components/btn-handler";
 import { detect, detectVideo } from "./utils/detect";
+import ReCAPTCHA from "react-google-recaptcha";
+import * as htmlToImage from "html-to-image";
+import FileSaver from "file-saver";
+import pluralize from "pluralize";
 import "./style/App.css";
 
 const App = () => {
@@ -19,8 +23,12 @@ const App = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
+  const captchaImgIframeRef = useRef(null);
   // model configs
   const modelName = "yolov8n";
+
+  const [status, setStatus] = useState(null);
+  const [captchaData, setCaptchaData] = useState({ key: "" });
 
   useEffect(() => {
     tf.ready().then(async () => {
@@ -47,41 +55,95 @@ const App = () => {
     });
   }, []);
 
+  const onChange = (value) => {
+    console.log("Captcha value:", value);
+  };
+
+  const handleBypassRecaptcha = async () => {
+    setStatus("Processing...");
+    setCaptchaData({ key: "" });
+    imageRef.current.style.display = "none";
+    const recaptchaCheckbox = document.querySelector("iframe");
+    recaptchaCheckbox.contentWindow.document
+      .querySelector(".recaptcha-checkbox")
+      .click();
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    captchaImgIframeRef.current = document.querySelector(
+      "iframe[title='recaptcha challenge expires in two minutes']"
+    );
+
+    let key =
+      captchaImgIframeRef.current.contentWindow.document.querySelector(
+        "strong"
+      ).textContent;
+    if (key) {
+      key = pluralize.singular(key);
+    }
+
+    setCaptchaData({ key });
+
+    const result = await htmlToImage.toBlob(captchaImgIframeRef.current, {
+      includeQueryParams: true,
+    });
+    imageRef.current.src = URL.createObjectURL(result);
+    imageRef.current.style.display = "block";
+    setStatus("");
+  };
+
   return (
     <div className="App">
-      {loading.loading && <Loader>Loading model... {(loading.progress * 100).toFixed(2)}%</Loader>}
+      {loading.loading && (
+        <Loader>Loading model... {(loading.progress * 100).toFixed(2)}%</Loader>
+      )}
       <div className="header">
-        <h1>📷 YOLOv8 Live Detection App</h1>
-        <p>
-          YOLOv8 live detection application on browser powered by <code>tensorflow.js</code>
-        </p>
+        <h1>Auto pass reCaptcha</h1>
+
         <p>
           Serving : <code className="code">{modelName}</code>
         </p>
       </div>
 
-      <div className="content">
-        <img
-          src="#"
-          ref={imageRef}
-          onLoad={() => detect(imageRef.current, model, canvasRef.current)}
-        />
-        <video
-          autoPlay
-          muted
-          ref={cameraRef}
-          onPlay={() => detectVideo(cameraRef.current, model, canvasRef.current)}
-        />
-        <video
-          autoPlay
-          muted
-          ref={videoRef}
-          onPlay={() => detectVideo(videoRef.current, model, canvasRef.current)}
-        />
-        <canvas width={model.inputShape[1]} height={model.inputShape[2]} ref={canvasRef} />
-      </div>
+      <div className="container">
+        <div>
+          <ReCAPTCHA
+            sitekey="6Les6kMpAAAAAO0SCEiXUKBIeSTf9rC8rXheCvO-"
+            onChange={onChange}
+          />
+        </div>
+        <div className="process-image">
+          <button onClick={handleBypassRecaptcha}>Run</button>
 
-      <ButtonHandler imageRef={imageRef} cameraRef={cameraRef} videoRef={videoRef} />
+          {status && <p>{status}</p>}
+          {captchaData.key && (
+            <div>
+              Keyword: <b>{captchaData.key}</b>
+            </div>
+          )}
+
+          <div className="content">
+            <img
+              src="#"
+              ref={imageRef}
+              onLoad={() => {
+                detect(
+                  imageRef.current,
+                  captchaImgIframeRef.current,
+                  captchaData,
+                  model,
+                  canvasRef.current
+                );
+              }}
+            />
+            <canvas
+              width={model.inputShape[1]}
+              height={model.inputShape[2]}
+              ref={canvasRef}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
